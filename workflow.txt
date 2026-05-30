@@ -1,0 +1,11 @@
+The LightGBM Workflow Blueprint
+Before generating the code, here is the exact conceptual pipeline you are instructing the AI to build:
+	-Unified Data Pipeline: Concatenate train.csv and test.csv (adding a is_test flag). This ensures that any geohash mapping or time transformations are applied identically across the entire dataset.
+	-Temporal Parsing: Convert the timestamp (HH:MM) into integer minutes past midnight (0 to 1425).
+	-Geohash Decoding: Use the pygeohash library to decode geohash into latitude and longitude floats.
+	-Sequential Sorting: Sort the entire unified dataset chronologically by geohash, then day, then minutes_past_midnight. This is an absolute requirement for the next step.
+	-Missing Value Interpolation: Group by geohash. Forward-fill (ffill) the missing Temperature and Weather values. Fill missing RoadType with the string "Unknown".
+	-Lag Feature Generation: Group by geohash. Shift the demand column exactly 96 periods (which equals 24 hours at 15-minute intervals) to create demand_24h_ago.
+	-Cyclical Encoding: Create Time_sin and Time_cos features from the minutes to capture the cyclic nature of the 24-hour clock.
+	-Strict Time-Split Validation: Split the data back into train and test. Then, split the train data into an active training set (Day 48, times 00:00 to 12:00) and a validation set (Day 48, times 12:15 to 23:45).
+	-Native Categorical LightGBM: Train the LightGBM Regressor using native categorical feature handling (no One-Hot Encoding) and output the 41778×2 submission file.
