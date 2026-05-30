@@ -1,0 +1,38 @@
+Flipkart Gridlock Hackathon 2.0 - Source Notes
+
+Approach
+- Built a Jupyter notebook pipeline that loads train.csv and test.csv, concatenates them with an is_test flag, and applies identical preprocessing across both datasets.
+- Parsed timestamp into minutes past midnight and added cyclical time encoding using sine and cosine.
+- Decoded geohash values into latitude and longitude with pygeohash for spatial signal.
+- Sorted the unified dataframe by geohash, day, and time_mins before feature generation.
+- Handled missing Temperature and Weather values with geohash-wise forward fill followed by backward fill.
+- Filled missing RoadType values with Unknown.
+- Created autoregressive demand features and rolling demand statistics by geohash to capture short-term and daily traffic dynamics.
+- Trained LightGBM with native categorical handling and produced submission.csv.
+
+Feature Engineering
+- Spatial: latitude, longitude from geohash, geohash category
+- Temporal: time_mins, time_sin, time_cos, day
+- Autoregressive: demand_lag_1, demand_lag_2, demand_lag_4, demand_lag_8, demand_lag_12, demand_lag_24, demand_lag_96
+- Rolling demand: demand_roll_mean_4, demand_roll_mean_8, demand_roll_mean_24, demand_roll_std_4, demand_roll_std_8, demand_roll_std_24
+- Categorical columns kept as pandas category dtype: geohash, RoadType, Weather, LargeVehicles, Landmarks
+
+Tools Used
+- pandas
+- numpy
+- lightgbm
+- pygeohash
+- scikit-learn
+- Jupyter Notebook
+
+Relevant Source Files
+- code.ipynb
+- train.csv
+- test.csv
+- workflow.txt
+- submission.csv
+
+Notes
+- The notebook keeps CUDA as the preferred LightGBM device_type and falls back to CPU when the local build does not support CUDA.
+- Validation uses a time-based split to avoid random leakage.
+- submission.csv contains only the required Index and demand columns.
