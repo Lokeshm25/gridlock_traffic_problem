@@ -1,0 +1,58 @@
+===============================================
+FLIPKART GRIDLOCK 2.0 - SOLUTION DOCUMENTATION
+===============================================
+
+1. EXECUTIVE SUMMARY
+--------------------------------------------------------------------------------
+The core challenge of the Flipkart Gridlock dataset is the necessity to predict 47 consecutive time steps (Day 49) into the future using highly constrained historical data (Day 48). Standard regression models fail here because they cannot capture the sequential, evolving momentum of traffic. 
+
+To solve this, I developed a "Dynamic Autoregressive Time-Series Super-Ensemble." The model does not predict the entire day at once. Instead, it predicts the traffic for just the next 15 minutes, appends that prediction to its own historical context, dynamically recalculates all rolling averages and momentum lags, and recursively steps forward in time. To mathematically crush the "recursive drift" (where small errors compound over 47 steps), the pipeline utilizes a heterogeneous 10-model LightGBM ensemble.
+
+2. THE ITERATIVE JOURNEY (Exploration & Pivots)
+--------------------------------------------------------------------------------
+Before arriving at the final architecture, I rigorously tested several advanced paradigms to overcome the compounding error of recursive forecasting. Analyzing why they failed informed the final winning model:
+
+* Iteration 1: Seq2Seq Direct Vector Forecasting (Wide-Format)
+  - Concept: Used a sliding window to train a Multi-Output model to predict all 47 steps simultaneously as a single mathematical vector, eliminating the recursive loop entirely.
+  - Result: Failed. Slicing the limited history into context windows blinded the model to the exact "24-hour ago" anchor, which proved to be the most critical feature.
+
+* Iteration 2: Deep Learning (1D-CNN + Bi-LSTM)
+  - Concept: Built a Bidirectional Long Short-Term Memory neural network to read the sequence of traffic and use its internal "Cell State" to remember the trajectory, rather than relying on explicit lag numbers.
+  - Result: Failed. Neural networks are highly data-hungry. With only ~100 time steps of history per geohash, the Bi-LSTM suffered from data starvation and could not converge on the 24-hour macro-pattern.
+
+* Iteration 3: Residual Learning & Baseline Decay Blending
+  - Concept: Transformed the mathematical target to predict the difference (residual) from exactly 24 hours ago, anchoring the predictions to a historical baseline.
+  - Result: Failed. Traffic is not perfectly continuous. Missing 15-minute intervals in the raw data misaligned the exact 24-hour shift, causing the residual math to implode.
+
+* Conclusion: Tree-based models operating on raw demand were the undeniable best fit for this dataset, provided they could be shielded from recursive hallucination.
+
+3. FINAL ARCHITECTURE
+--------------------------------------------------------------------------------
+The final pipeline achieves high accuracy through three critical components:
+
+A. Advanced Feature Engineering
+* Spatial Decoding: Utilized 'pygeohash' to decode the alphanumeric geohashes into precise Latitude and Longitude continuous variables.
+* Cyclical Time Encoding: Converted HH:MM timestamps into total minutes and applied Sine/Cosine transformations to allow the trees to understand the 24-hour cycle without arbitrary midnight cutoffs.
+* The "Fuzzy" Memory Window: Instead of just providing the exact traffic from 24 hours ago (lag_96), the model is fed [lag_95, lag_96, lag_97]. This acts as a buffer—if the morning rush hour started 15 minutes earlier on Day 49, the model naturally adjusts.
+* Volatility Tracking: Calculated Rolling Means and Standard Deviations over [4, 8, 24] step windows to help the model recognize momentum spikes.
+
+B. The Recursive Inference Engine
+The model operates chronologically. During inference on the test set, it loops through each geohash one row at a time. It executes the prediction, instantly appends the output to the active historical array, and recalculates the dynamic features (lags and rolling windows) on the fly before predicting the next row.
+
+C. The 10-Model Super-Ensemble
+To prevent the recursive loop from drifting into extreme errors in the late afternoon, I executed a Massive Random Search over 30 distinct LightGBM architectures (varying learning rates, tree depths, and L1/L2 regularization). The pipeline automatically selects the Top 10 most accurate models and averages their predictions at every single time step. Where one tree hallucinates a spike, the other nine mathematically overrule it, ensuring an incredibly stable, robust prediction curve.
+
+4. TOOLS & LIBRARIES USED
+--------------------------------------------------------------------------------
+* Python 3.x
+* LightGBM: Gradient Boosting Framework (Chosen over XGBoost for its speed and native categorical handling).
+* Pandas: For high-performance data manipulation and spatial grouping.
+* NumPy: For rapid vector math and array concatenation inside the recursive loop.
+* PyGeohash: For decoding spatial identifiers.
+* Scikit-Learn: For internal validation splits and localized R² evaluation.
+
+5. RELEVANT SOURCE FILES
+--------------------------------------------------------------------------------
+* Gridlock_Recursive_Ensemble.ipynb: The main Jupyter Notebook containing the data ingestion, feature engineering, model training, and the dynamic inference loop.
+* approach_and_details.txt: This documentation file.
+* requirements.txt: Python dependency list.
